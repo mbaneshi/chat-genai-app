@@ -1,0 +1,158 @@
+import os
+from typing import Union, Dict
+
+StructureType = Dict[str, Union[str, Dict[str, Union[str, dict]]]]
+
+
+# Define the directory structure
+structure: StructureType = {
+    "app": {
+        "__init__.py": "",
+        "core": {
+            "config.py": """import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class Settings:
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./gemini.db")
+    GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "your-api-key")
+
+settings = Settings()
+""",
+            "security.py": "",
+            "logger.py": "",
+        },
+        "api": {
+            "__init__.py": "",
+            "routes": {
+                "prompt.py": """from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from ..db import crud
+from ..schemas.prompt import PromptResponseCreate, PromptResponse
+from ..db.database import get_db
+
+router = APIRouter()
+
+@router.post("/prompt", response_model=PromptResponse)
+def create_prompt(prompt: PromptResponseCreate, db: Session = Depends(get_db)):
+    return crud.create_prompt(db=db, prompt=prompt)
+
+@router.get("/prompts", response_model=list[PromptResponse])
+def read_prompts(skip: int = 0, limit: int = 10, db: Session = Depends(get_db)):
+    return crud.get_prompts(db=db, skip=skip, limit=limit)
+""",
+                "schemas": {
+                    "prompt.py": """from pydantic import BaseModel
+from datetime import datetime
+
+class PromptResponseBase(BaseModel):
+    prompt: str
+
+class PromptResponseCreate(PromptResponseBase):
+    pass
+
+class PromptResponse(PromptResponseBase):
+    id: int
+    response: str
+    created_at: datetime
+
+    class Config:
+        orm_mode = True
+"""
+                },
+                "services": {
+                    "gemini_service.py": """import google.generativeai as genai
+from ..core.config import settings
+
+genai.configure(api_key=settings.GOOGLE_API_KEY)
+model = genai.GenerativeModel("gemini-pro")
+
+def generate_response(prompt: str) -> str:
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error generating response: {e}"
+"""
+                },
+            },
+            "db": {
+                "__init__.py": "",
+                "database.py": """from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
+from ..core.config import settings
+
+engine = create_engine(settings.DATABASE_URL)
+Base = declarative_base()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+""",
+                "models.py": """from sqlalchemy import Column, Integer, String, DateTime
+from sqlalchemy.sql import func
+from .database import Base
+
+class PromptResponse(Base):
+    __tablename__ = "prompt_responses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    prompt = Column(String, index=True)
+    response = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+""",
+                "crud.py": """from sqlalchemy.orm import Session
+from .models import PromptResponse
+from ..schemas.prompt import PromptResponseCreate
+
+def create_prompt(db: Session, prompt: PromptResponseCreate):
+    db_prompt = PromptResponse(prompt=prompt.prompt)
+    db.add(db_prompt)
+    db.commit()
+    db.refresh(db_prompt)
+    return db_prompt
+
+def get_prompts(db: Session, skip: int = 0, limit: int = 10):
+    return db.query(PromptResponse).offset(skip).limit(limit).all()
+""",
+            },
+            "alembic.ini": "",
+            "migrations": {},
+            "requirements.txt": """fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+pydantic
+python-dotenv
+google-generativeai
+""",
+        },
+        ".env": """DATABASE_URL="sqlite:///./gemini.db"
+GOOGLE_API_KEY="your-google-api-key"
+""",
+    }
+}
+
+
+# Function to create directories and files recursively
+def create_structure(base_path, structure):
+    for name, value in structure.items():
+        path = os.path.join(base_path, name)
+        if isinstance(value, dict):  # If it's a directory, recurse
+            os.makedirs(path, exist_ok=True)
+            create_structure(path, value)
+        else:  # If it's a file, create the file with content
+            with open(path, "w") as file:
+                file.write(value)
+
+
+# Create the backend directory structure
+create_structure(".", structure)
+
+print("Directory structure created successfully!")
