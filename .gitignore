@@ -1,0 +1,27 @@
+# General OS files
+.DS_Store
+Thumbs.db
+
+# Python related
+**/__pycache__
+**/*.pyc
+**/*.pyo
+*.egg-info
+.venv
+.env
+
+# FastAPI / backend related
+backend/migrations/versions
+backend/.alembic_version
+
+# Frontend related
+frontend/node_modules
+frontend/.svelte-kit
+frontend/build
+frontend/dist
+
+# Docker related
+**/Dockerfile*
+docker-compose.yml
+.dockerignore
+
